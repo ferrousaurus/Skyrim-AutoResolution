@@ -1,20 +1,13 @@
+cmake_minimum_required(VERSION 3.21)
 
-if(NOT DEFINED ENV{COMMONLIB_SSE_FOLDER})
-  message(FATAL_ERROR "Missing COMMONLIB_SSE_FOLDER environment variable")
-endif()
-
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/dependencies.cmake")
 include(cmake/headerlist.cmake)
 include(cmake/sourcelist.cmake)
-include(cmake/lib/copyOutputs.cmake)
-include(cmake/lib/automaticGameFolderOutput.cmake)
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
-# It's recommended to set a minimum CMake version.
-# If you use CMake features from higher versions, update this to match.
-cmake_minimum_required(VERSION 3.21)
 # Set your project name. This will be the name of your SKSE .dll file.
-set(AUTHOR_NAME "Quantumyilmaz")
+set(AUTHOR_NAME "ferrousaurus")
 set(PRODUCT_NAME "PreSSEDisplayTweaks")
 project(${PRODUCT_NAME} VERSION 1.1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
@@ -44,8 +37,10 @@ set(ENABLE_SKYRIM_AE ON CACHE BOOL " " FORCE)
 set(ENABLE_SKYRIM_VR ON CACHE BOOL " " FORCE)
 set(BUILD_TESTS OFF CACHE BOOL " " FORCE)
 
-add_subdirectory("$ENV{COMMONLIB_SSE_FOLDER}" ${CMAKE_CURRENT_BINARY_DIR}/_deps/clib-build)
+add_subdirectory("${COMMONLIB_SSE_FOLDER}" ${CMAKE_CURRENT_BINARY_DIR}/_deps/clib-build)
 get_target_property(COMMONLIB_SRC_DIR CommonLibSSE SOURCE_DIR)
+
+find_path(SIMPLEINI_INCLUDE_DIR SimpleIni.h REQUIRED)
 
 file(
   GLOB_RECURSE
@@ -73,11 +68,7 @@ target_include_directories(
 	${PROJECT_NAME}
 	PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/include
+	${SIMPLEINI_INCLUDE_DIR}
 )
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE IS_HOST_PLUGIN)
-
-set(wildlander_output false)
-set(steam_owrt_output false)
-set(steam_mods_output true)
-automaticGameFolderOutput(wildlander_output, steam_owrt_output, steam_mods_output)
