@@ -1,7 +1,7 @@
 [tools]
 cmake = "3.31"
 # [msvc](https://aka.ms/vs/stable/vs_BuildTools.exe)
-ninja = "1.12"
+ninja = "1.13"
 
 [tasks.build]
 env = { CMAKE_BUILD_THREADS = 4 }
