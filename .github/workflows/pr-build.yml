@@ -1,0 +1,102 @@
+name: PR Build
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Windows x64 Release
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ runner.temp }}/vcpkg-binary-cache
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: x64
+
+      - name: Install CMake 3.31.8 and Ninja 1.13.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tools = Join-Path $env:RUNNER_TEMP 'build-tools'
+          $cmakeZip = Join-Path $env:RUNNER_TEMP 'cmake-3.31.8-windows-x86_64.zip'
+          $ninjaZip = Join-Path $env:RUNNER_TEMP 'ninja-win.zip'
+
+          Invoke-WebRequest 'https://github.com/Kitware/CMake/releases/download/v3.31.8/cmake-3.31.8-windows-x86_64.zip' -OutFile $cmakeZip
+          Invoke-WebRequest 'https://github.com/ninja-build/ninja/releases/download/v1.13.1/ninja-win.zip' -OutFile $ninjaZip
+
+          $downloads = @(
+            @{ Path = $cmakeZip; Sha256 = '81AA9964DBABD71FE02E7EC50472FD3AD56138C49944515ECE9001EFBFF8D719' },
+            @{ Path = $ninjaZip; Sha256 = '26A40FA8595694DEC2FAD4911E62D29E10525D2133C9A4230B66397774AE25BF' }
+          )
+          foreach ($download in $downloads) {
+            $actualHash = (Get-FileHash -Algorithm SHA256 $download.Path).Hash
+            if ($actualHash -ne $download.Sha256) {
+              throw "SHA-256 mismatch for $($download.Path): $actualHash"
+            }
+          }
+
+          New-Item -ItemType Directory -Path $tools -Force | Out-Null
+          Expand-Archive -Path $cmakeZip -DestinationPath $tools -Force
+          $ninjaDirectory = Join-Path $tools 'ninja'
+          New-Item -ItemType Directory -Path $ninjaDirectory -Force | Out-Null
+          Expand-Archive -Path $ninjaZip -DestinationPath $ninjaDirectory -Force
+
+          $cmakeBin = Join-Path $tools 'cmake-3.31.8-windows-x86_64/bin'
+          $cmakeBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $ninjaDirectory | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & (Join-Path $cmakeBin 'cmake.exe') --version
+          & (Join-Path $ninjaDirectory 'ninja.exe') --version
+
+      - name: Cache vcpkg binary packages
+        uses: actions/cache@0c45773b623bea8c8e75f6c82a208c3cf94ea4f9 # v4.2.3
+        with:
+          path: ${{ runner.temp }}/vcpkg-binary-cache
+          key: vcpkg-windows-x64-static-${{ hashFiles('vcpkg.json', 'CMakePresets.json', 'cmake/**') }}
+
+      - name: Configure Release
+        shell: pwsh
+        run: cmake --preset release
+
+      - name: Build plugin
+        shell: pwsh
+        run: cmake --build build/release --target PreSSEDisplayTweaks --parallel 4
+
+      - name: Verify build output
+        shell: pwsh
+        run: |
+          $dll = Join-Path $env:GITHUB_WORKSPACE 'build/release/PreSSEDisplayTweaks.dll'
+          if (-not (Test-Path $dll)) { throw "Build output not found: $dll" }
+
+      - name: Upload PR build artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: PreSSEDisplayTweaks-windows-x64-release
+          path: build/release/PreSSEDisplayTweaks.dll
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload CMake configure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cmake-configure-diagnostics
+          path: build/release/CMakeFiles/CMakeConfigureLog.yaml
+          if-no-files-found: ignore
+          retention-days: 7
